@@ -1,5 +1,7 @@
+use axum::http::response;
 use axum::{extract::State, http::StatusCode, Json};
 use tokio::sync::oneshot;
+use crate::actors::db;
 use crate::app::AppState;
 use crate::actors::orderbook::OrderbookCommand;
 use crate::dto::{CreateMarketOrderRequest, CreateMarketOrderResponse};
@@ -8,6 +10,7 @@ pub async fn create_limit_order_handler(
     State(state): State<AppState>,
     Json(payload): Json<CreateMarketOrderRequest>
 ) -> CreateMarketOrderResponse {
+
     let ob_tx = state.ob_tx.clone();
     let (oneshot_tx, oneshot_rx) = oneshot::channel();
     
@@ -24,7 +27,7 @@ pub async fn create_limit_order_handler(
         Ok(response) => {
             if response.status.contains("Successfull") {
                 CreateMarketOrderResponse {
-                    message: "Market Order Created".to_string(),
+                    message: response.status,
                     trades: response.fills,
                     status: StatusCode::OK
                 }

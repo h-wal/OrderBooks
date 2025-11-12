@@ -45,34 +45,79 @@ pub async fn start_orderbook_actor(mut rx: mpsc::Receiver<OrderbookCommand>, db_
     while let Some(cmd) = rx.recv().await {
         match cmd {
             OrderbookCommand::NewLimitOrder { market_id, user_id, side, qty, price, resp } => {
-                let response = if order_book.contains_key(&market_id) {
+                let response = if order_book.contains_key(&market_id) { //checking if market exists or not
+
+                    println!("The market exists");
+                    println!("Checking for user");
+                    
                     let (oneshot_tx, oneshot_rx) = oneshot::channel();
-                    let _ = db_tx.send(DbCommand::CheckUser {
+                    let _ = db_tx.send(DbCommand::GetUser { //checking if user exists or not
                         user_email: user_id.clone(),
                         response_status: oneshot_tx 
                     })
                     .await;
 
                     match oneshot_rx.await {
-                        Ok(response) => {
-                            if response.user_exists {
-                                println!("User exists");
-                                println!("Market {} exists, inserting order...", market_id);
+                        Ok(response) => match response.user {
 
-                                if let Some(book) = order_book.get_mut(&market_id) {
-                                    let order = Order::new(user_id, qty, price, side);
-                                    book.insert_order(order);
-                                }
+                            Some(user)=> {
+                                println!("User with email {} exists, balance = {} and holding = {}", user.email, user.balance, user.holdings);
 
-                                OrderbookResponse {
-                                    status: "Order added Successfull".to_string(),
-                                    fills: vec![],
-                                    remaining_qty: 0,
-                                    bids: None,
-                                    asks: None
-                                }
-                            } else {
-                                println!("User does not exists.");
+                                let response = match side {
+
+                                    Side::Bid if price * qty > user.balance => {
+                                        OrderbookResponse {
+                                            status: "Insufficient Balance".to_string(),
+                                            fills: vec![],
+                                            remaining_qty: 0,
+                                            bids: None,
+                                            asks: None
+                                        }
+                                    }
+
+                                    Side::Bid => {
+
+
+                                        
+
+                                        OrderbookResponse {
+                                            status: "Order added Successfull".to_string(),
+                                            fills: vec![],
+                                            remaining_qty: 0,
+                                            bids: None,
+                                            asks: None
+                                        }
+                                    }
+                                    
+                                    Side::Ask if qty > user.holdings => {
+                                        OrderbookResponse {
+                                            status: "Insufficient quantity".to_string(),
+                                            fills: vec![],
+                                            remaining_qty: 0,
+                                            bids: None,
+                                            asks: None
+                                        }
+                                    }
+
+                                    Side::Ask => {
+                                        OrderbookResponse {
+                                            status: "Order added Successfull".to_string(),
+                                            fills: vec![],
+                                            remaining_qty: 0,
+                                            bids: None,
+                                            asks: None
+                                        }
+                                    }
+                                };
+
+                                response
+
+
+
+                            }
+                            
+                            None => {
+                                println!("User with email does not exists");
                                 OrderbookResponse {
                                     status: "User Does Not Exists".to_string(),
                                     fills: vec![],
@@ -81,11 +126,11 @@ pub async fn start_orderbook_actor(mut rx: mpsc::Receiver<OrderbookCommand>, db_
                                     asks: None
                                 }
                             }
-                        }
-                        Err(_) => {
+
+                        } Err(_) => {
                             println!("Error finding User in the database");
                             OrderbookResponse {
-                                status: "Error finding User in the data base".to_string(),
+                                status: "Error, finding User in the data base".to_string(),
                                 fills: vec![],
                                 remaining_qty: 0,
                                 bids: None,
@@ -104,7 +149,7 @@ pub async fn start_orderbook_actor(mut rx: mpsc::Receiver<OrderbookCommand>, db_
                     }
                 };
 
-                let _ = resp.send(response);
+                let _ = resp.send(response); // returning the final response for create new limit order command from here
             }
             OrderbookCommand::NewMarketOrder { market_id, user_id: _, side: _, qty: _, resp } => {
                 let response = if order_book.contains_key(&market_id) {

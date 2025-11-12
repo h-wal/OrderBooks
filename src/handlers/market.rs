@@ -32,16 +32,6 @@ pub async fn get_order_book_handler(
                     Ok(response) => {
                         if response.status.contains("Successfull") {
                             let (bids, asks) = match (response.bids, response.asks) {
-                                (Some(bids_map), Some(asks_map)) => {
-                                    let book = MarketBook {
-                                        bids: bids_map,
-                                        asks: asks_map,
-                                    };
-                                    (
-                                        Some(MarketBook::summarize_side(&book.bids, Side::Bid)),
-                                        Some(MarketBook::summarize_side(&book.asks, Side::Ask)),
-                                    )
-                                }
                                 _ => (Some(vec![]), Some(vec![]))
                             };
                             

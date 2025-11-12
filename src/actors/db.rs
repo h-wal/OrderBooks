@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::{collections::HashMap};
+use axum::http::response;
 use tokio::sync::{mpsc, oneshot};
 use crate::domain::User;
 
@@ -24,6 +25,10 @@ pub enum DbCommand {
     CheckUser {
         user_email: String,
         response_status: oneshot::Sender<CheckUserDbResponseType>
+    },
+    GetUser {
+        user_email: String,
+        response_status: oneshot::Sender<GetUserDbResponseType>
     }
 }
 
@@ -43,6 +48,10 @@ pub struct OnRampDbResponseType {
 
 pub struct CheckUserDbResponseType {
     pub user_exists: bool
+}
+
+pub struct GetUserDbResponseType{
+    pub user: Option<User>
 }
 
 pub async fn start_db_actor(mut rx: mpsc::Receiver<DbCommand>) {
@@ -111,6 +120,13 @@ pub async fn start_db_actor(mut rx: mpsc::Receiver<DbCommand>) {
             DbCommand::CheckUser { user_email, response_status } => {
                 let response = CheckUserDbResponseType { 
                     user_exists: users.contains_key(&user_email) 
+                };
+                let _ = response_status.send(response);
+            }
+            DbCommand::GetUser { user_email, response_status } => {
+                let user = users.get(&user_email).cloned();
+                let response = GetUserDbResponseType {
+                    user
                 };
                 let _ = response_status.send(response);
             }

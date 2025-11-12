@@ -114,8 +114,8 @@ impl IntoResponse for CreateMarketOrderResponse {
 #[derive(Serialize)]
 pub struct GetOrderBookResponse {
     pub message: String,
-    pub bids: Option<Vec<crate::domain::OrderSummary>>,
-    pub asks: Option<Vec<crate::domain::OrderSummary>>,
+    pub bids: Option<Vec<crate::domain::Order>>,
+    pub asks: Option<Vec<crate::domain::Order>>,
     #[serde(skip_serializing)]
     pub status: StatusCode,
 }

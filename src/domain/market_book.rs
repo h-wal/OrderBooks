@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
 use crate::domain::{Order, OrderSummary, Side};
+use crate::domain::Trade;
 
 pub struct MarketBook {
     pub bids: BTreeMap<u64, VecDeque<Order>>,
@@ -24,19 +25,19 @@ impl MarketBook {
         entry.push_back(order);
     }
 
-    pub fn summarize_side(side: &BTreeMap<u64, VecDeque<Order>>, side_type: Side) -> Vec<OrderSummary> {
-        let mut summaries = Vec::new();
+    pub fn summarize_side(side: &BTreeMap<u64, VecDeque<Order>>, side_type: Side) -> Vec<Trade> {
+        let mut fills: Vec<Trade> = Vec::new();
         for (price, orders) in side.iter() {
             for order in orders.iter() {
-                summaries.push(OrderSummary {
-                    owner: order.user_id.clone(),
-                    qty: order.qty,
-                    price: *price,
-                    side: side_type.clone(),
+                fills.push(Trade { 
+                    buyer: "".to_string(), 
+                    seller: "".to_string(), 
+                    qty: 0, 
+                    price: 0 
                 });
             }
         }
-        summaries
+        fills
     }
 }
 
