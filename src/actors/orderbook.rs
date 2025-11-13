@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 use tokio::sync::{mpsc, oneshot};
 use crate::actors::db::{DbCommand, DbSender};
-use crate::domain::{MarketBook, Order, Side};
+use crate::domain::{MarketBook, Order, Side, order};
 
 pub enum OrderbookCommand {
     NewLimitOrder {
@@ -102,6 +102,11 @@ pub async fn start_orderbook_actor(mut rx: mpsc::Receiver<OrderbookCommand>, db_
                                     }
 
                                     Side::Ask => {
+
+                                        let order = Order{user_id, qty, price, side};
+                                        
+                                        order_book.get_mut(&market_id).unwrap().insert_order(order);
+
                                         OrderbookResponse {
                                             status: "Order added Successfull".to_string(),
                                             fills: vec![],

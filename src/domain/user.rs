@@ -1,9 +1,12 @@
+use crate::domain::Trade;
+
 #[derive(Clone, Debug)]
 pub struct User {
     pub email: String,
     pub password: String,
     pub balance: u64,
     pub holdings: u64,
+    pub trades: Vec<Trade>
 }
 
 impl User {
@@ -13,6 +16,7 @@ impl User {
             password,
             balance: 0,
             holdings: 0,
+            trades: vec![]
         }
     }
 }
