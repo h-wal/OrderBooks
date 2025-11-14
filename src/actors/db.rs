@@ -1,7 +1,7 @@
-use std::{collections::HashMap};
+use std::{collections::HashMap, vec};
 use axum::http::response;
 use tokio::sync::{mpsc, oneshot};
-use crate::domain::User;
+use crate::domain::{Trade, User};
 
 pub type DbSender = mpsc::Sender<DbCommand>;
 
@@ -29,6 +29,10 @@ pub enum DbCommand {
     GetUser {
         user_email: String,
         response_status: oneshot::Sender<GetUserDbResponseType>
+    },
+    Reconciliation{
+        trades: Vec<Trade>,
+        response_status: oneshot::Sender<Vec<ReconciliationDbResponseType>>
     }
 }
 
@@ -52,6 +56,15 @@ pub struct CheckUserDbResponseType {
 
 pub struct GetUserDbResponseType{
     pub user: Option<User>
+}
+
+#[derive(Debug)]
+pub struct ReconciliationDbResponseType{
+    pub trade: Trade,
+    pub buyer: String,
+    pub seller: String,
+    pub prev_balances : Vec<User>,
+    pub curr_balances : Vec<User>
 }
 
 pub async fn start_db_actor(mut rx: mpsc::Receiver<DbCommand>) {
@@ -129,6 +142,45 @@ pub async fn start_db_actor(mut rx: mpsc::Receiver<DbCommand>) {
                     user
                 };
                 let _ = response_status.send(response);
+            }
+            DbCommand::Reconciliation {trades, response_status} => {
+                
+                let mut responses = Vec::new();
+                for trade in trades {
+                    let mut prev_balances: Vec<User> = Vec::new();
+                    let mut curr_balances: Vec<User> = Vec::new();
+                    
+                    if let Some(buyer) = users.get_mut(&trade.buyer){
+                        if buyer.balance > trade.price{
+                            prev_balances.push(buyer.clone());
+                            buyer.holdings += trade.qty;
+                            buyer.balance -= trade.price*trade.qty;
+                        }
+                        curr_balances.push(buyer.clone());
+                    }
+                    if let Some(seller) = users.get_mut(&trade.seller){
+                        if seller.holdings > trade.qty{
+                            prev_balances.push(seller.clone());
+                            seller.holdings -= trade.qty;
+                            seller.balance += trade.price*trade.qty;
+                        }
+                        curr_balances.push(seller.clone());
+                    }
+
+                    let response = ReconciliationDbResponseType {
+                        buyer: trade.buyer.clone(),
+                        seller: trade.seller.clone(),
+                        trade: trade,
+                        prev_balances: prev_balances,
+                        curr_balances
+                    };
+
+                    responses.push(response);
+                }
+                
+
+                let _ = response_status.send(responses);
+
             }
         }
     }

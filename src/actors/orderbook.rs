@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use axum::http::response;
 use tokio::sync::{mpsc, oneshot};
 use crate::actors::db::{DbCommand, DbSender};
 use crate::domain::{MarketBook, Order, Side, order};
@@ -79,14 +80,44 @@ pub async fn start_orderbook_actor(mut rx: mpsc::Receiver<OrderbookCommand>, db_
                                         
                                         let order = Order { user_id, qty, price, side };
 
-                                        order_book.get_mut(&market_id).unwrap().insert_order(order);
+                                        let (trades, reamaining_order) = order_book.get_mut(&market_id).unwrap().match_order(order);
 
-                                        OrderbookResponse {
-                                            status: "Order added Successfull".to_string(),
-                                            fills: vec![],
-                                            remaining_qty: 0,
-                                            bids: None,
-                                            asks: None
+                                        let (oneshot_tx, oneshot_rx) = oneshot::channel();
+                                        let _ = db_tx.send(DbCommand::Reconciliation { trades: trades.clone(), response_status: oneshot_tx }).await;
+
+                                        match oneshot_rx.await {
+                                            Ok(response) => {
+                                                println!("{:#?}", response);
+                                            }
+                                            Err(_) => {
+                                                println!("Error")
+                                            }
+                                        }   
+                                        println!("{:#?}", reamaining_order);
+                                        println!("{:#?}", trades);
+                                        match reamaining_order {
+                                            Some(order) => {
+                                                    order_book.get_mut(&market_id).unwrap().insert_order(order);
+                                                    println!("Some Order is remaining");
+                                                    OrderbookResponse {
+                                                        status: "Successfull, But some Order is remaining".to_string(),
+                                                        fills: trades,
+                                                        remaining_qty: 0,
+                                                        bids: None,
+                                                        asks: None
+                                                    }
+                                                }
+
+                                            None => {
+                                                println!("Complete order mathched");
+                                                OrderbookResponse {
+                                                    status: "Successfull, Complete order mathched".to_string(),
+                                                    fills: trades,
+                                                    remaining_qty: 0,
+                                                    bids: None,
+                                                    asks: None
+                                                }
+                                            }
                                         }
 
                                     } 
@@ -103,16 +134,46 @@ pub async fn start_orderbook_actor(mut rx: mpsc::Receiver<OrderbookCommand>, db_
 
                                     Side::Ask => {
 
-                                        let order = Order{user_id, qty, price, side};
-                                        
-                                        order_book.get_mut(&market_id).unwrap().insert_order(order);
+                                        let order = Order { user_id, qty, price, side };
 
-                                        OrderbookResponse {
-                                            status: "Order added Successfull".to_string(),
-                                            fills: vec![],
-                                            remaining_qty: 0,
-                                            bids: None,
-                                            asks: None
+                                        let (trades, reamaining_order) = order_book.get_mut(&market_id).unwrap().match_order(order);
+
+                                        let (oneshot_tx, oneshot_rx) = oneshot::channel();
+                                        let _ = db_tx.send(DbCommand::Reconciliation { trades: trades.clone(), response_status: oneshot_tx }).await;
+
+                                        match oneshot_rx.await {
+                                            Ok(response) => {
+                                                println!("{:#?}", response);
+                                            }
+                                            Err(_) => {
+                                                println!("Error")
+                                            }
+                                        }
+
+                                        println!("{:#?}", reamaining_order);
+                                        println!("{:#?}", trades);
+                                        match reamaining_order {
+                                            Some(order) => {
+                                                    order_book.get_mut(&market_id).unwrap().insert_order(order);
+                                                    println!("Some Order is remaining");
+                                                    OrderbookResponse {
+                                                        status: "Successfull, But some Order is remaining".to_string(),
+                                                        fills: trades,
+                                                        remaining_qty: 0,
+                                                        bids: None,
+                                                        asks: None
+                                                }
+                                            }
+                                            None => {
+                                                println!("Complete order mathched");
+                                                OrderbookResponse {
+                                                    status: "Successfull, Complete order mathched".to_string(),
+                                                    fills: trades,
+                                                    remaining_qty: 0,
+                                                    bids: None,
+                                                    asks: None
+                                                }
+                                            }
                                         }
                                     }
                                 };
@@ -160,7 +221,7 @@ pub async fn start_orderbook_actor(mut rx: mpsc::Receiver<OrderbookCommand>, db_
                     //Todo Create Market Order
                     println!("Market {} exists, inserting order...", market_id);
                     OrderbookResponse {
-                        status: "Order added Successfull".to_string(),
+                        status: "Order added Successfulll".to_string(),
                         fills: vec![],
                         remaining_qty: 0,
                         bids: None,
@@ -188,7 +249,7 @@ pub async fn start_orderbook_actor(mut rx: mpsc::Receiver<OrderbookCommand>, db_
                         println!("Asks: {:#?}", book.asks);
                         
                         OrderbookResponse {
-                            status: "Successfull! This is the current status of the orderBook".to_string(),
+                            status: "Successfulll! This is the current status of the orderBook".to_string(),
                             fills: vec![],
                             remaining_qty: 0,
                             bids: Some(book.bids.clone()),

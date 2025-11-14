@@ -96,7 +96,7 @@ impl MarketBook {
                         break;
                     }
 
-                    if let Some(mut bid_orders) = self.bids.get_mut(&bid_price){
+                    if let Some(bid_orders) = self.bids.get_mut(&bid_price){
 
                         while let Some(mut bid_order) = bid_orders.pop_front(){
 
