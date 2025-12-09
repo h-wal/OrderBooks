@@ -96,6 +96,24 @@ impl OnRampResponse {
 }
 
 #[derive(Serialize)]
+pub struct CreateLimitOrderResponse {
+    pub message: String,
+    pub trades: Vec<Trade>,
+    #[serde(skip_serializing)]
+    pub status: StatusCode,
+}
+
+impl IntoResponse for CreateLimitOrderResponse {
+    fn into_response(self) -> Response {
+        let body = Json(serde_json::json!({
+            "message": self.message,
+            "trades": self.trades
+        }));
+        (self.status, body).into_response()
+    }
+}
+
+#[derive(Serialize)]
 pub struct CreateMarketOrderResponse {
     pub message: String,
     pub trades: Vec<Trade>,
@@ -110,6 +128,30 @@ impl IntoResponse for CreateMarketOrderResponse {
             "trades": self.trades
         }));
         (self.status, body).into_response()
+    }
+}
+
+impl CreateMarketOrderResponse{
+    
+    pub fn created(msg: impl Into<String>, trades: Vec<Trade>) -> Self {
+        Self { 
+            message: msg.into(), 
+            trades: trades, 
+            status: StatusCode::OK }
+    }
+    
+    pub fn failed(msg: impl Into<String>, trades: Vec<Trade>) -> Self {
+        Self { 
+            message: msg.into(), 
+            trades: vec![], 
+            status: StatusCode::EXPECTATION_FAILED }
+    }
+
+    pub fn error(msg: impl Into<String>, trades: Vec<Trade>) -> Self {
+        Self { 
+            message: msg.into(), 
+            trades: vec![], 
+            status: StatusCode::INTERNAL_SERVER_ERROR }
     }
 }
 
@@ -128,6 +170,100 @@ impl IntoResponse for GetOrderBookResponse {
             "message": self.message,
             "bids": self.bids,
             "asks": self.asks
+        }));
+        (self.status, body).into_response()
+    }
+}
+
+#[derive(Serialize)]
+pub struct CancelOrderResponse {
+    pub message: String,
+    #[serde(skip_serializing)]
+    pub status: StatusCode,
+}
+
+impl CancelOrderResponse {
+    pub fn ok(msg: impl Into<String>) -> Self {
+        Self {
+            message: msg.into(),
+            status: StatusCode::OK,
+        }
+    }
+
+    pub fn failed(msg: impl Into<String>) -> Self {
+        Self {
+            message: msg.into(),
+            status: StatusCode::NOT_FOUND,
+        }
+    }
+}
+
+impl IntoResponse for CancelOrderResponse {
+    fn into_response(self) -> Response {
+        let body = Json(json!({ "message": self.message }));
+        (self.status, body).into_response()
+    }
+}
+
+#[derive(Serialize)]
+pub struct CreateMarketResponse {
+    pub message: String,
+    pub markets: Option<Vec<u64>>,
+    #[serde(skip_serializing)]
+    pub status: StatusCode,
+}
+
+impl CreateMarketResponse {
+    pub fn created(msg: impl Into<String>, markets: Option<Vec<u64>>) -> Self {
+        Self {
+            message: msg.into(),
+            markets,
+            status: StatusCode::CREATED,
+        }
+    }
+
+    pub fn failed(msg: impl Into<String>) -> Self {
+        Self {
+            message: msg.into(),
+            markets: None,
+            status: StatusCode::BAD_REQUEST,
+        }
+    }
+}
+
+impl IntoResponse for CreateMarketResponse {
+    fn into_response(self) -> Response {
+        let body = Json(json!({
+            "message": self.message,
+            "markets": self.markets
+        }));
+        (self.status, body).into_response()
+    }
+}
+
+#[derive(Serialize)]
+pub struct ListMarketsResponse {
+    pub message: String,
+    pub markets: Vec<u64>,
+    #[serde(skip_serializing)]
+    pub status: StatusCode,
+}
+
+impl ListMarketsResponse {
+    pub fn ok(msg: impl Into<String>, markets: Vec<u64>) -> Self {
+        Self {
+            message: msg.into(),
+            markets,
+            status: StatusCode::OK,
+        }
+    }
+}
+
+impl IntoResponse for ListMarketsResponse {
+    fn into_response(self) -> Response {
+        let body = Json(json!({
+            "message": self.message,
+            "markets": self.markets
         }));
         (self.status, body).into_response()
     }

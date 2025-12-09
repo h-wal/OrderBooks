@@ -138,18 +138,48 @@ impl MarketBook {
             }
         }
 
-        let remaining_order = if remaining_qty > 0 {
-            Some(Order {
-                user_id: incoming_order.user_id,
-                qty: remaining_qty,
-                price: incoming_order.price,
-                side: incoming_order.side,
-            })
-        } else {
-            None
-        };
+        let remaining_order = (remaining_qty > 0).then(|| Order {
+            id: incoming_order.id,
+            user_id: incoming_order.user_id,
+            qty: remaining_qty,
+            price: incoming_order.price,
+            side: incoming_order.side,
+        });
 
         (fills, remaining_order)
+    }
+
+    pub fn cancel_order(&mut self, side: Side, order_id: uuid::Uuid) -> bool {
+        let book_side = match side {
+            Side::Bid => &mut self.bids,
+            Side::Ask => &mut self.asks,
+        };
+
+        let mut removed = false;
+        let prices: Vec<u64> = book_side.keys().cloned().collect();
+
+        for price in prices {
+            if let Some(orders) = book_side.get_mut(&price) {
+                orders.retain(|o| {
+                    if o.id == order_id {
+                        removed = true;
+                        false
+                    } else {
+                        true
+                    }
+                });
+
+                if orders.is_empty() {
+                    book_side.remove(&price);
+                }
+
+                if removed {
+                    break;
+                }
+            }
+        }
+
+        removed
     }
 
 }

@@ -1,29 +1,43 @@
 use std::collections::{BTreeMap, HashMap};
-use axum::http::response;
 use tokio::sync::{mpsc, oneshot};
+use uuid::Uuid;
+
 use crate::actors::db::{DbCommand, DbSender};
-use crate::domain::{MarketBook, Order, Side, order};
+use crate::domain::{MarketBook, Order, Side};
 
 pub enum OrderbookCommand {
+    CreateMarket {
+        market_id: u64,
+        resp: oneshot::Sender<OrderbookResponse>,
+    },
+    ListMarkets {
+        resp: oneshot::Sender<OrderbookResponse>,
+    },
     NewLimitOrder {
         market_id: u64,
         user_id: String,
         side: Side,
         qty: u64,
         price: u64,
-        resp: oneshot::Sender<OrderbookResponse> 
+        resp: oneshot::Sender<OrderbookResponse>,
     },
     NewMarketOrder {
         market_id: u64,
         user_id: String,
         side: Side,
         qty: u64,
-        resp: oneshot::Sender<OrderbookResponse>
+        resp: oneshot::Sender<OrderbookResponse>,
+    },
+    CancelOrder {
+        market_id: u64,
+        side: Side,
+        order_id: Uuid,
+        resp: oneshot::Sender<OrderbookResponse>,
     },
     GetBook {
         market_id: u64,
-        resp: oneshot::Sender<OrderbookResponse>
-    }
+        resp: oneshot::Sender<OrderbookResponse>,
+    },
 }
 
 pub struct OrderbookResponse {
@@ -32,251 +46,195 @@ pub struct OrderbookResponse {
     pub remaining_qty: u64,
     pub bids: Option<BTreeMap<u64, std::collections::VecDeque<Order>>>,
     pub asks: Option<BTreeMap<u64, std::collections::VecDeque<Order>>>,
+    pub market_ids: Option<Vec<u64>>,
+    pub canceled: bool,
+}
+
+impl OrderbookResponse {
+    fn empty(status: impl Into<String>) -> Self {
+        Self {
+            status: status.into(),
+            fills: vec![],
+            remaining_qty: 0,
+            bids: None,
+            asks: None,
+            market_ids: None,
+            canceled: false,
+        }
+    }
 }
 
 pub async fn start_orderbook_actor(mut rx: mpsc::Receiver<OrderbookCommand>, db_tx: DbSender) {
     let mut order_book: HashMap<u64, MarketBook> = HashMap::new();
 
-    let order_book_1 = MarketBook::new();
-    order_book.insert(1, order_book_1);
-
-    println!("MarketBookDbActor Started");
-    println!("Initialized first market with id = 1");
+    println!("Orderbook actor started");
 
     while let Some(cmd) = rx.recv().await {
         match cmd {
-            OrderbookCommand::NewLimitOrder { market_id, user_id, side, qty, price, resp } => {
-                let response = if order_book.contains_key(&market_id) { //checking if market exists or not
-
-                    println!("The market exists");
-                    println!("Checking for user");
-                    
-                    let (oneshot_tx, oneshot_rx) = oneshot::channel();
-                    let _ = db_tx.send(DbCommand::GetUser { //checking if user exists or not
-                        user_email: user_id.clone(),
-                        response_status: oneshot_tx 
-                    })
-                    .await;
-
-                    match oneshot_rx.await {
-                        Ok(response) => match response.user {
-
-                            Some(user)=> {
-                                println!("User with email {} exists, balance = {} and holding = {}", user.email, user.balance, user.holdings);
-
-                                let response = match side {
-
-                                    Side::Bid if price * qty > user.balance => {
-                                        OrderbookResponse {
-                                            status: "Insufficient Balance".to_string(),
-                                            fills: vec![],
-                                            remaining_qty: 0,
-                                            bids: None,
-                                            asks: None
-                                        }
-                                    }
-
-                                    Side::Bid => {
-                                        
-                                        let order = Order { user_id, qty, price, side };
-
-                                        let (trades, reamaining_order) = order_book.get_mut(&market_id).unwrap().match_order(order);
-
-                                        let (oneshot_tx, oneshot_rx) = oneshot::channel();
-                                        let _ = db_tx.send(DbCommand::Reconciliation { trades: trades.clone(), response_status: oneshot_tx }).await;
-
-                                        match oneshot_rx.await {
-                                            Ok(response) => {
-                                                println!("{:#?}", response);
-                                            }
-                                            Err(_) => {
-                                                println!("Error")
-                                            }
-                                        }   
-                                        println!("{:#?}", reamaining_order);
-                                        println!("{:#?}", trades);
-                                        match reamaining_order {
-                                            Some(order) => {
-                                                    order_book.get_mut(&market_id).unwrap().insert_order(order);
-                                                    println!("Some Order is remaining");
-                                                    OrderbookResponse {
-                                                        status: "Successfull, But some Order is remaining".to_string(),
-                                                        fills: trades,
-                                                        remaining_qty: 0,
-                                                        bids: None,
-                                                        asks: None
-                                                    }
-                                                }
-
-                                            None => {
-                                                println!("Complete order mathched");
-                                                OrderbookResponse {
-                                                    status: "Successfull, Complete order mathched".to_string(),
-                                                    fills: trades,
-                                                    remaining_qty: 0,
-                                                    bids: None,
-                                                    asks: None
-                                                }
-                                            }
-                                        }
-
-                                    } 
-                                    
-                                    Side::Ask if qty > user.holdings => {
-                                        OrderbookResponse {
-                                            status: "Insufficient quantity".to_string(),
-                                            fills: vec![],
-                                            remaining_qty: 0,
-                                            bids: None,
-                                            asks: None
-                                        }
-                                    }
-
-                                    Side::Ask => {
-
-                                        let order = Order { user_id, qty, price, side };
-
-                                        let (trades, reamaining_order) = order_book.get_mut(&market_id).unwrap().match_order(order);
-
-                                        let (oneshot_tx, oneshot_rx) = oneshot::channel();
-                                        let _ = db_tx.send(DbCommand::Reconciliation { trades: trades.clone(), response_status: oneshot_tx }).await;
-
-                                        match oneshot_rx.await {
-                                            Ok(response) => {
-                                                println!("{:#?}", response);
-                                            }
-                                            Err(_) => {
-                                                println!("Error")
-                                            }
-                                        }
-
-                                        println!("{:#?}", reamaining_order);
-                                        println!("{:#?}", trades);
-                                        match reamaining_order {
-                                            Some(order) => {
-                                                    order_book.get_mut(&market_id).unwrap().insert_order(order);
-                                                    println!("Some Order is remaining");
-                                                    OrderbookResponse {
-                                                        status: "Successfull, But some Order is remaining".to_string(),
-                                                        fills: trades,
-                                                        remaining_qty: 0,
-                                                        bids: None,
-                                                        asks: None
-                                                }
-                                            }
-                                            None => {
-                                                println!("Complete order mathched");
-                                                OrderbookResponse {
-                                                    status: "Successfull, Complete order mathched".to_string(),
-                                                    fills: trades,
-                                                    remaining_qty: 0,
-                                                    bids: None,
-                                                    asks: None
-                                                }
-                                            }
-                                        }
-                                    }
-                                };
-
-                                response
-                            }
-                            
-                            None => {
-                                println!("User with email does not exists");
-                                OrderbookResponse {
-                                    status: "User Does Not Exists".to_string(),
-                                    fills: vec![],
-                                    remaining_qty: 0,
-                                    bids: None,
-                                    asks: None
-                                }
-                            }
-
-                        } Err(_) => {
-                            println!("Error finding User in the database");
-                            OrderbookResponse {
-                                status: "Error, finding User in the data base".to_string(),
-                                fills: vec![],
-                                remaining_qty: 0,
-                                bids: None,
-                                asks: None
-                            }
-                        }
-                    }
-                } else {
-                    println!("Market with Market id = {}, does not exist", market_id);
-                    OrderbookResponse {
-                        status: "Market does not exist".to_string(),
-                        fills: vec![],
-                        remaining_qty: 0,
-                        bids: None,
-                        asks: None
-                    }
-                };
-
-                let _ = resp.send(response); // returning the final response for create new limit order command from here
-            }
-            OrderbookCommand::NewMarketOrder { market_id, user_id: _, side: _, qty: _, resp } => {
+            OrderbookCommand::CreateMarket { market_id, resp } => {
                 let response = if order_book.contains_key(&market_id) {
-                    //Todo Create Market Order
-                    println!("Market {} exists, inserting order...", market_id);
-                    OrderbookResponse {
-                        status: "Order added Successfulll".to_string(),
-                        fills: vec![],
-                        remaining_qty: 0,
-                        bids: None,
-                        asks: None
-                    }
+                    OrderbookResponse::empty(format!("Market {} already exists", market_id))
                 } else {
-                    println!("Market with Market id = {}, does not exist", market_id);
+                    order_book.insert(market_id, MarketBook::new());
                     OrderbookResponse {
-                        status: "Market does not exist".to_string(),
-                        fills: vec![],
-                        remaining_qty: 0,
-                        bids: None,
-                        asks: None
+                        market_ids: Some(order_book.keys().cloned().collect()),
+                        ..OrderbookResponse::empty(format!("Market {} created", market_id))
                     }
                 };
                 let _ = resp.send(response);
             }
-            OrderbookCommand::GetBook { market_id, resp } => {
-                let response = if order_book.contains_key(&market_id) {
-                    println!("Market Exists , id = {}", market_id);
+            OrderbookCommand::ListMarkets { resp } => {
+                let ids = order_book.keys().cloned().collect::<Vec<_>>();
+                let response = OrderbookResponse {
+                    market_ids: Some(ids),
+                    ..OrderbookResponse::empty("Markets listed")
+                };
+                let _ = resp.send(response);
+            }
+            OrderbookCommand::NewLimitOrder { market_id, user_id, side, qty, price, resp } => {
+                let response = if let Some(book) = order_book.get_mut(&market_id) {
+                    let (oneshot_tx, oneshot_rx) = oneshot::channel();
+                    let _ = db_tx.send(DbCommand::GetUser {
+                        user_email: user_id.clone(),
+                        response_status: oneshot_tx,
+                    }).await;
 
-                    if let Some(book) = order_book.get(&market_id) {
+                    match oneshot_rx.await {
+                        Ok(response) => match response.user {
+                            Some(user) => {
+                                let response = match side {
+                                    Side::Bid if price * qty > user.balance => {
+                                        OrderbookResponse::empty("Insufficient balance")
+                                    }
+                                    Side::Ask if qty > user.holdings => {
+                                        OrderbookResponse::empty("Insufficient holdings")
+                                    }
+                                    _ => {
+                                        let order = Order::new(user_id.clone(), qty, price, side);
+                                        let (trades, remaining_order) = book.match_order(order);
 
-                        println!("Bids: {:#?}", book.bids);
-                        println!("Asks: {:#?}", book.asks);
-                        
+                                        let (tx, rx) = oneshot::channel();
+                                        let _ = db_tx.send(DbCommand::Reconciliation {
+                                            trades: trades.clone(),
+                                            response_status: tx,
+                                        }).await;
+                                        let _ = rx.await;
+
+                                        if let Some(order) = remaining_order {
+                                            book.insert_order(order);
+                                            OrderbookResponse {
+                                                status: "Success, resting remaining order".to_string(),
+                                                fills: trades,
+                                                remaining_qty: 0,
+                                                bids: None,
+                                                asks: None,
+                                                market_ids: None,
+                                                canceled: false,
+                                            }
+                                        } else {
+                                            OrderbookResponse {
+                                                status: "Success, fully matched".to_string(),
+                                                fills: trades,
+                                                remaining_qty: 0,
+                                                bids: None,
+                                                asks: None,
+                                                market_ids: None,
+                                                canceled: false,
+                                            }
+                                        }
+                                    }
+                                };
+                                response
+                            }
+                            None => OrderbookResponse::empty("User does not exist"),
+                        },
+                        Err(_) => OrderbookResponse::empty("Database error"),
+                    }
+                } else {
+                    OrderbookResponse::empty("Market does not exist")
+                };
+
+                let _ = resp.send(response);
+            }
+            OrderbookCommand::NewMarketOrder { market_id, user_id, side , qty , resp } => {
+                let response = if let Some(book) = order_book.get_mut(&market_id) {
+                    let (oneshot_tx, oneshot_rx) = oneshot::channel();
+                    let _ = db_tx.send(DbCommand::GetUser { 
+                        user_email: user_id.clone(), 
+                        response_status: oneshot_tx 
+                    }).await;
+
+                    match oneshot_rx.await {
+                        Ok(response) => {
+                            match response.user {
+                                Some(user) => {
+                                    println!("User {} has balance {}", user.email, user.balance );
+                                    let order = Order::new(user_id.clone(), qty, 0, side);
+
+                                    let (trades, _remaining_order) = book.match_order(order);
+
+                                    let (tx, rx) = oneshot::channel();
+                                    let _ = db_tx.send(DbCommand::Reconciliation { trades: trades.clone(), response_status: tx }).await;
+                                    let _ = rx.await;
+
+                                    OrderbookResponse {
+                                        status: "Market order processed".to_string(),
+                                        fills: trades,
+                                        remaining_qty: 0,
+                                        bids: None,
+                                        asks: None,
+                                        market_ids: None,
+                                        canceled: false,
+                                    }
+                                }
+                                None => OrderbookResponse::empty("Error finding user"),
+                            }
+                        }
+                        Err(_) => OrderbookResponse::empty("Database error"),
+                    }
+                } else {
+                    OrderbookResponse::empty("Market does not exist")
+                };
+
+                let _ = resp.send(response);
+            }
+            OrderbookCommand::CancelOrder { market_id, side, order_id, resp } => {
+                let response = if let Some(book) = order_book.get_mut(&market_id) {
+                    let removed = book.cancel_order(side, order_id);
+                    if removed {
                         OrderbookResponse {
-                            status: "Successfulll! This is the current status of the orderBook".to_string(),
-                            fills: vec![],
-                            remaining_qty: 0,
-                            bids: Some(book.bids.clone()),
-                            asks: Some(book.asks.clone())
-                        } 
-                    } else {
-                        OrderbookResponse {
-                            status: "Cannot find the orderBook".to_string(),
+                            status: "Order canceled".to_string(),
                             fills: vec![],
                             remaining_qty: 0,
                             bids: None,
-                            asks: None
+                            asks: None,
+                            market_ids: None,
+                            canceled: true,
                         }
+                    } else {
+                        OrderbookResponse::empty("Order not found")
                     }
                 } else {
-                    println!("Market does not exists, id = {}", market_id);
-                    OrderbookResponse { 
-                        status: "Market Does not exists".to_string(), 
-                        fills: vec![], 
-                        remaining_qty: 0, 
-                        bids: None,
-                        asks: None
+                    OrderbookResponse::empty("Market does not exist")
+                };
+                let _ = resp.send(response);
+            }
+            OrderbookCommand::GetBook { market_id, resp } => {
+                let response = if let Some(book) = order_book.get(&market_id) {
+                    OrderbookResponse {
+                        status: "Successful! Current order book snapshot".to_string(),
+                        fills: vec![],
+                        remaining_qty: 0,
+                        bids: Some(book.bids.clone()),
+                        asks: Some(book.asks.clone()),
+                        market_ids: None,
+                        canceled: false,
                     }
+                } else {
+                    OrderbookResponse::empty("Market does not exist")
                 };
                 let _ = resp.send(response);
             }
         }
     }
 }
-
